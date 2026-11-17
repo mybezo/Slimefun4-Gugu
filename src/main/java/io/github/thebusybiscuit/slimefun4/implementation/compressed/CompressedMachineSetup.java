@@ -169,10 +169,12 @@ public final class CompressedMachineSetup {
             return;
         }
 
-        CompressedItemGroup guideGroup = new CompressedItemGroup(
+        // Only the highest multiplier of every item is listed in the guide
+        ItemGroup guideGroup = new ItemGroup(
                 new NamespacedKey(plugin, "compressed_machines"),
                 new CustomItemStack(SlimefunItems.NETHER_STAR_REACTOR.clone(), "&aCompressed Machine & Electric"),
                 5);
+        // The lower multipliers are still craftable, but hidden
         ItemGroup hiddenGroup =
                 new ItemGroup(
                         new NamespacedKey(plugin, "compressed_machines_items"),
@@ -198,17 +200,30 @@ public final class CompressedMachineSetup {
                 continue;
             }
 
-            List<SlimefunItem> column = new ArrayList<>(enabled.size());
+            // A multiplier that is disabled in the Items.yml also disables the multipliers above it
+            List<Integer> available = new ArrayList<>(enabled.size());
+            for (int multiplier : enabled) {
+                String id = entry.id() + "_X" + multiplier;
+
+                if (Slimefun.getItemCfg().contains(id + ".enabled")
+                        && !Slimefun.getItemCfg().getBoolean(id + ".enabled")) {
+                    break;
+                }
+
+                available.add(multiplier);
+            }
+
             ItemStack previous = base.getItem();
             int previousMultiplier = 1;
 
             try {
-                for (int multiplier : enabled) {
+                for (int multiplier : available) {
                     SlimefunItemStack itemStack = createItemStack(entry, base, multiplier);
                     ItemStack[] recipe = new ItemStack[9];
                     recipe[0] = new CustomItemStack(previous, multiplier / previousMultiplier);
 
-                    SlimefunItem item = entry.factory().create(base, hiddenGroup, itemStack, recipe, multiplier);
+                    ItemGroup group = multiplier == available.get(available.size() - 1) ? guideGroup : hiddenGroup;
+                    SlimefunItem item = entry.factory().create(base, group, itemStack, recipe, multiplier);
 
                     if (item == null) {
                         break;
@@ -221,7 +236,6 @@ public final class CompressedMachineSetup {
                     }
 
                     multipliers.put(item.getId(), multiplier);
-                    column.add(item);
                     count++;
 
                     previous = itemStack;
@@ -231,12 +245,6 @@ public final class CompressedMachineSetup {
                 plugin.getLogger()
                         .log(Level.SEVERE, x, () -> "Could not register the compressed versions of " + entry.id());
             }
-
-            guideGroup.addColumn(column);
-        }
-
-        if (!guideGroup.isEmpty()) {
-            guideGroup.register(plugin);
         }
 
         plugin.getLogger().log(Level.INFO, "Registered {0} compressed machines and electric devices", count);
@@ -315,23 +323,23 @@ public final class CompressedMachineSetup {
     private static List<Entry> entries() {
         List<Entry> entries = new ArrayList<>();
 
-        // Machines, in the order of the guide
-        machine(entries, ElectricOreGrinder::new, "ELECTRIC_ORE_GRINDER", 3);
-        machine(entries, ElectricPress::new, "ELECTRIC_PRESS", 2);
-        machine(entries, ElectricGoldPan::new, "ELECTRIC_GOLD_PAN", 3);
-        machine(entries, ElectricDustWasher::new, "ELECTRIC_DUST_WASHER", 3);
-        machine(entries, ElectricIngotFactory::new, "ELECTRIC_INGOT_FACTORY", 3);
-        machine(entries, ElectricIngotPulverizer::new, "ELECTRIC_INGOT_PULVERIZER", 1);
-        machine(entries, ElectricFurnace::new, "ELECTRIC_FURNACE", 3);
-        machine(entries, ElectricSmeltery::new, "ELECTRIC_SMELTERY", 2);
-        machine(entries, CarbonPress::new, "CARBON_PRESS", 3);
-        machine(entries, HeatedPressureChamber::new, "HEATED_PRESSURE_CHAMBER", 2);
-        machine(entries, ElectrifiedCrucible::new, "ELECTRIFIED_CRUCIBLE", 3);
-        machine(entries, Refinery::new, "REFINERY", 1);
-        machine(entries, Freezer::new, "FREEZER", 3);
-        machine(entries, AutoDrier::new, "AUTO_DRIER", 1);
-        machine(entries, FoodFabricator::new, "FOOD_FABRICATOR", 2);
-        machine(entries, FoodComposter::new, "FOOD_COMPOSTER", 2);
+        // Machines, the large layout (7 inputs, 21 outputs) is used by single input machines
+        machine(entries, ElectricOreGrinder::new, "ELECTRIC_ORE_GRINDER", 3, true);
+        machine(entries, ElectricPress::new, "ELECTRIC_PRESS", 2, true);
+        machine(entries, ElectricGoldPan::new, "ELECTRIC_GOLD_PAN", 3, true);
+        machine(entries, ElectricDustWasher::new, "ELECTRIC_DUST_WASHER", 3, true);
+        machine(entries, ElectricIngotFactory::new, "ELECTRIC_INGOT_FACTORY", 3, false);
+        machine(entries, ElectricIngotPulverizer::new, "ELECTRIC_INGOT_PULVERIZER", 1, false);
+        machine(entries, ElectricFurnace::new, "ELECTRIC_FURNACE", 3, true);
+        machine(entries, ElectricSmeltery::new, "ELECTRIC_SMELTERY", 2, false);
+        machine(entries, CarbonPress::new, "CARBON_PRESS", 3, true);
+        machine(entries, HeatedPressureChamber::new, "HEATED_PRESSURE_CHAMBER", 2, false);
+        machine(entries, ElectrifiedCrucible::new, "ELECTRIFIED_CRUCIBLE", 3, false);
+        machine(entries, Refinery::new, "REFINERY", 1, false);
+        machine(entries, Freezer::new, "FREEZER", 3, true);
+        machine(entries, AutoDrier::new, "AUTO_DRIER", 1, false);
+        machine(entries, FoodFabricator::new, "FOOD_FABRICATOR", 2, false);
+        machine(entries, FoodComposter::new, "FOOD_COMPOSTER", 2, false);
 
         // Capacitors
         for (String id : List.of(
@@ -426,7 +434,8 @@ public final class CompressedMachineSetup {
     }
 
     @ParametersAreNonnullByDefault
-    private static void machine(List<Entry> entries, MachineConstructor constructor, String id, int tiers) {
+    private static void machine(
+            List<Entry> entries, MachineConstructor constructor, String id, int tiers, boolean largeLayout) {
         for (int tier = 1; tier <= tiers; tier++) {
             String tierId = tier == 1 ? id : id + '_' + tier;
 
@@ -439,7 +448,7 @@ public final class CompressedMachineSetup {
                 compressed.setCapacity(scale(machine.getCapacity(), multiplier));
                 compressed.setEnergyConsumption(machine.getEnergyConsumption());
                 compressed.setProcessingSpeed(machine.getSpeed());
-                compressed.setCompressed(machine, multiplier);
+                compressed.setCompressed(machine, multiplier, largeLayout);
                 return compressed;
             }));
         }

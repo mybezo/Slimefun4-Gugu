@@ -64,6 +64,19 @@ public abstract class AContainer extends SlimefunItem
      */
     private static final int[] BORDER_OUT = {14, 15, 16, 17, 23, 26, 32, 33, 34, 35};
 
+    /*
+     * The large layout of compressed machines: 7 input slots in the top row,
+     * the progress in the middle and 21 output slots below.
+     */
+    private static final int[] COMPRESSED_INPUT_SLOTS = {1, 2, 3, 4, 5, 6, 7};
+    private static final int[] COMPRESSED_OUTPUT_SLOTS = {
+        28, 29, 30, 31, 32, 33, 34, 37, 38, 39, 40, 41, 42, 43, 46, 47, 48, 49, 50, 51, 52
+    };
+    private static final int[] COMPRESSED_BORDER_IN = {0, 8, 9, 10, 11, 12, 14, 15, 16, 17};
+    private static final int[] COMPRESSED_BORDER_OUT = {18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 35, 36, 44, 45, 53};
+    private static final int COMPRESSED_PROGRESS_SLOT = 13;
+    private static final int PROGRESS_SLOT = 22;
+
     /**
      * The list of registered machine recipes.
      */
@@ -84,6 +97,11 @@ public abstract class AContainer extends SlimefunItem
      * The original machine of a compressed machine, its recipes are shared.
      */
     private AContainer compressedBase;
+
+    /**
+     * Whether this compressed machine uses the large layout (7 inputs, 21 outputs).
+     */
+    private boolean compressedLayout;
 
     @ParametersAreNonnullByDefault
     protected AContainer(ItemGroup itemGroup, SlimefunItemStack item, RecipeType recipeType, ItemStack[] recipe) {
@@ -336,6 +354,22 @@ public abstract class AContainer extends SlimefunItem
      * @return This method will return the current instance of {@link AContainer}, so that can be chained.
      */
     public final AContainer setCompressed(@Nonnull AContainer base, int multiplier) {
+        return setCompressed(base, multiplier, false);
+    }
+
+    /**
+     * This turns this machine into a compressed machine, see {@link #setCompressed(AContainer, int)}.
+     *
+     * @param base
+     *            The original machine
+     * @param multiplier
+     *            The amount of machines combined into this machine
+     * @param largeLayout
+     *            Whether the machine uses the large layout with 7 input and 21 output slots
+     *
+     * @return This method will return the current instance of {@link AContainer}, so that can be chained.
+     */
+    public final AContainer setCompressed(@Nonnull AContainer base, int multiplier, boolean largeLayout) {
         Validate.notNull(base, "The original machine cannot be null!");
         Validate.isTrue(multiplier > 0, "The multiplier must be greater than zero!");
 
@@ -345,7 +379,61 @@ public abstract class AContainer extends SlimefunItem
 
         this.compressedBase = base;
         this.compressedMultiplier = multiplier;
+
+        if (largeLayout && !compressedLayout) {
+            this.compressedLayout = true;
+            // The menu was created with the normal layout in the constructor, replace it
+            createPreset(this, getInventoryTitle(), this::constructCompressedMenu);
+        }
+
         return this;
+    }
+
+    /**
+     * This constructs the large menu of a compressed machine.
+     *
+     * @param preset
+     *            The {@link BlockMenuPreset}
+     */
+    private void constructCompressedMenu(@Nonnull BlockMenuPreset preset) {
+        for (int i : COMPRESSED_BORDER_IN) {
+            preset.addItem(i, ChestMenuUtils.getInputSlotTexture(), ChestMenuUtils.getEmptyClickHandler());
+        }
+
+        for (int i : COMPRESSED_BORDER_OUT) {
+            preset.addItem(i, ChestMenuUtils.getOutputSlotTexture(), ChestMenuUtils.getEmptyClickHandler());
+        }
+
+        preset.addItem(COMPRESSED_PROGRESS_SLOT, ChestMenuUtils.getBackground(), ChestMenuUtils.getEmptyClickHandler());
+
+        addOutputClickHandlers(preset);
+    }
+
+    private void addOutputClickHandlers(@Nonnull BlockMenuPreset preset) {
+        for (int i : getOutputSlots()) {
+            preset.addMenuClickHandler(i, new AdvancedMenuClickHandler() {
+
+                @Override
+                public boolean onClick(Player p, int slot, ItemStack cursor, ClickAction action) {
+                    return false;
+                }
+
+                @Override
+                public boolean onClick(
+                        InventoryClickEvent e, Player p, int slot, ItemStack cursor, ClickAction action) {
+                    return cursor == null || cursor.getType() == null || cursor.getType() == Material.AIR;
+                }
+            });
+        }
+    }
+
+    /**
+     * This returns the slot that shows the progress of this machine.
+     *
+     * @return The progress slot
+     */
+    protected int getProgressSlot() {
+        return compressedLayout ? COMPRESSED_PROGRESS_SLOT : PROGRESS_SLOT;
     }
 
     /**
@@ -384,12 +472,12 @@ public abstract class AContainer extends SlimefunItem
 
     @Override
     public int[] getInputSlots() {
-        return new int[] {19, 20};
+        return compressedLayout ? COMPRESSED_INPUT_SLOTS.clone() : new int[] {19, 20};
     }
 
     @Override
     public int[] getOutputSlots() {
-        return new int[] {24, 25};
+        return compressedLayout ? COMPRESSED_OUTPUT_SLOTS.clone() : new int[] {24, 25};
     }
 
     @Override
@@ -438,10 +526,14 @@ public abstract class AContainer extends SlimefunItem
             if (charged) {
 
                 if (!currentOperation.isFinished()) {
-                    processor.updateProgressBar(inv, 22, currentOperation);
+                    processor.updateProgressBar(inv, getProgressSlot(), currentOperation);
                     currentOperation.addProgress(1);
                 } else {
-                    inv.replaceExistingItem(22, new CustomItemStack(Material.BLACK_STAINED_GLASS_PANE, " "));
+                    inv.replaceExistingItem(
+                            getProgressSlot(),
+                            compressedLayout
+                                    ? ChestMenuUtils.getBackground()
+                                    : new CustomItemStack(Material.BLACK_STAINED_GLASS_PANE, " "));
 
                     for (ItemStack output : currentOperation.getResults()) {
                         if (output != null && !output.getType().isAir()) {
@@ -458,7 +550,7 @@ public abstract class AContainer extends SlimefunItem
 
                 if (currentOperation != null) {
                     processor.startOperation(b, currentOperation);
-                    processor.updateProgressBar(inv, 22, currentOperation);
+                    processor.updateProgressBar(inv, getProgressSlot(), currentOperation);
                 }
 
                 return;
@@ -471,7 +563,7 @@ public abstract class AContainer extends SlimefunItem
                 processor.startOperation(b, currentOperation);
 
                 // Fixes #3534 - Update indicator immediately
-                processor.updateProgressBar(inv, 22, currentOperation);
+                processor.updateProgressBar(inv, getProgressSlot(), currentOperation);
             }
         }
     }
