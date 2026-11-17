@@ -6,8 +6,10 @@ import io.github.thebusybiscuit.slimefun4.api.items.SlimefunItemStack;
 import io.github.thebusybiscuit.slimefun4.api.recipes.RecipeType;
 import io.github.thebusybiscuit.slimefun4.core.attributes.RecipeDisplayItem;
 import io.github.thebusybiscuit.slimefun4.implementation.SlimefunItems;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.RandomBatch;
 import io.github.thebusybiscuit.slimefun4.implementation.items.tools.GoldPan;
 import io.github.thebusybiscuit.slimefun4.implementation.items.tools.NetherGoldPan;
+import io.github.thebusybiscuit.slimefun4.implementation.operations.CraftingOperation;
 import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.Nonnull;
@@ -106,6 +108,24 @@ public class ElectricGoldPan extends AContainer implements RecipeDisplayItem {
         }
 
         return null;
+    }
+
+    @Override
+    protected CraftingOperation findNextBatch(@Nonnull BlockMenu menu, int max) {
+        if (!isOutputLimitOverridden() && !hasFreeSlot(menu)) {
+            return null;
+        }
+
+        return RandomBatch.process(menu, getInputSlots(), getOutputSlots(), max, item -> {
+            if (goldPan.isValidInput(item)) {
+                return new RandomBatch.Unit(new ItemStack(item.getType()), 3 / getSpeed(), goldPan::getRandomOutput);
+            } else if (netherGoldPan.isValidInput(item)) {
+                return new RandomBatch.Unit(
+                        new ItemStack(item.getType()), 4 / getSpeed(), netherGoldPan::getRandomOutput);
+            } else {
+                return null;
+            }
+        });
     }
 
     private boolean hasFreeSlot(@Nonnull BlockMenu menu) {

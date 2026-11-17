@@ -5,7 +5,9 @@ import io.github.thebusybiscuit.slimefun4.api.items.SlimefunItemStack;
 import io.github.thebusybiscuit.slimefun4.api.recipes.RecipeType;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.SlimefunItems;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.RandomBatch;
 import io.github.thebusybiscuit.slimefun4.implementation.items.multiblocks.OreWasher;
+import io.github.thebusybiscuit.slimefun4.implementation.operations.CraftingOperation;
 import io.github.thebusybiscuit.slimefun4.utils.SlimefunUtils;
 import javax.annotation.Nonnull;
 import javax.annotation.ParametersAreNonnullByDefault;
@@ -77,6 +79,28 @@ public class ElectricDustWasher extends AContainer {
         }
 
         return null;
+    }
+
+    @Override
+    protected CraftingOperation findNextBatch(@Nonnull BlockMenu menu, int max) {
+        boolean freeSlot = hasFreeSlot(menu);
+
+        return RandomBatch.process(menu, getInputSlots(), getOutputSlots(), max, item -> {
+            if (SlimefunUtils.isItemSimilar(item, SlimefunItems.SIFTED_ORE, true, false)) {
+                if (!legacyMode && !freeSlot) {
+                    return null;
+                }
+
+                return new RandomBatch.Unit(SlimefunItems.SIFTED_ORE, 4 / getSpeed(), oreWasher::getRandomDust);
+            } else if (SlimefunUtils.isItemSimilar(item, SlimefunItems.PULVERIZED_ORE, true)) {
+                return new RandomBatch.Unit(
+                        SlimefunItems.PULVERIZED_ORE, 4 / getSpeed(), SlimefunItems.PURE_ORE_CLUSTER::clone);
+            } else if (SlimefunUtils.isItemSimilar(item, new ItemStack(Material.SAND), true)) {
+                return new RandomBatch.Unit(new ItemStack(Material.SAND), 4 / getSpeed(), SlimefunItems.SALT::clone);
+            } else {
+                return null;
+            }
+        });
     }
 
     private boolean hasFreeSlot(BlockMenu menu) {

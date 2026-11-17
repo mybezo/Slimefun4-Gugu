@@ -15,6 +15,7 @@ import io.github.thebusybiscuit.slimefun4.core.handlers.BlockBreakHandler;
 import io.github.thebusybiscuit.slimefun4.core.machines.MachineProcessor;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.SlimefunItems;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.CompressedOutputs;
 import io.github.thebusybiscuit.slimefun4.implementation.handlers.SimpleBlockBreakHandler;
 import io.github.thebusybiscuit.slimefun4.implementation.items.cargo.ReactorAccessPort;
 import io.github.thebusybiscuit.slimefun4.implementation.items.electric.AbstractEnergyProvider;
@@ -388,11 +389,11 @@ public abstract class Reactor extends AbstractEnergyProvider
             if (!operation.isFinished()) {
                 return generateEnergy(l, data, inv, accessPort, operation);
             } else {
-                createByproduct(l, inv, accessPort, operation);
+                createByproduct(l, data, inv, accessPort, operation);
                 return 0;
             }
         } else {
-            burnNextFuel(l, inv, accessPort);
+            burnNextFuel(l, data, inv, accessPort);
             return 0;
         }
     }
@@ -403,7 +404,8 @@ public abstract class Reactor extends AbstractEnergyProvider
             @Nonnull BlockMenu inv,
             @Nullable BlockMenu accessPort,
             @Nonnull FuelOperation operation) {
-        int produced = getEnergyProduction();
+        int batch = getCompressedBatch(data);
+        int produced = getEnergyProduction() * batch;
         String energyData = data.getData("energy-charge");
         int charge = 0;
 
@@ -418,14 +420,14 @@ public abstract class Reactor extends AbstractEnergyProvider
             checkForWaterBlocks(l);
             processor.updateProgressBar(inv, 22, operation);
 
-            if (needsCooling() && !hasEnoughCoolant(l, inv, accessPort, operation)) {
+            if (needsCooling() && !hasEnoughCoolant(l, inv, accessPort, operation, batch)) {
                 explosionsQueue.add(l);
                 return 0;
             }
         }
 
         if (space >= produced) {
-            return getEnergyProduction();
+            return produced;
         } else {
             return 0;
         }
@@ -468,6 +470,7 @@ public abstract class Reactor extends AbstractEnergyProvider
 
     private void createByproduct(
             @Nonnull Location l,
+            @Nonnull ASlimefunDataContainer data,
             @Nonnull BlockMenu inv,
             @Nullable BlockMenu accessPort,
             @Nonnull FuelOperation operation) {
@@ -475,7 +478,14 @@ public abstract class Reactor extends AbstractEnergyProvider
         ItemStack result = operation.getResult();
 
         if (result != null) {
-            inv.pushItem(result.clone(), getOutputSlots());
+            int batch = getCompressedBatch(data);
+
+            if (batch > 1) {
+                CompressedOutputs.push(
+                        inv, getOutputSlots(), CompressedOutputs.multiply(new ItemStack[] {result}, batch));
+            } else {
+                inv.pushItem(result.clone(), getOutputSlots());
+            }
         }
 
         if (accessPort != null) {
@@ -490,7 +500,7 @@ public abstract class Reactor extends AbstractEnergyProvider
         processor.endOperation(l);
     }
 
-    private void burnNextFuel(Location l, BlockMenu inv, BlockMenu accessPort) {
+    private void burnNextFuel(Location l, ASlimefunDataContainer data, BlockMenu inv, BlockMenu accessPort) {
         Map<Integer, Integer> found = new HashMap<>();
         MachineFuel fuel = findFuel(inv, found);
 
@@ -499,8 +509,25 @@ public abstract class Reactor extends AbstractEnergyProvider
         }
 
         if (fuel != null) {
-            for (Map.Entry<Integer, Integer> entry : found.entrySet()) {
-                inv.consumeItem(entry.getKey(), entry.getValue());
+            if (getCompressedMultiplier() > 1) {
+                int batch = Math.min(getCompressedMultiplier(), countFuelUnits(inv, getInputSlots(), fuel));
+
+                // The byproduct of all the fuel units has to fit into the output slot
+                if (fuel.getOutput() != null && !fuel.getOutput().getType().isAir()) {
+                    batch = CompressedOutputs.maxFitting(
+                            inv, getOutputSlots(), new ItemStack[] {fuel.getOutput()}, batch);
+                }
+
+                if (batch <= 0) {
+                    return;
+                }
+
+                consumeFuelUnits(inv, getInputSlots(), fuel, batch);
+                setCompressedBatch(data, batch);
+            } else {
+                for (Map.Entry<Integer, Integer> entry : found.entrySet()) {
+                    inv.consumeItem(entry.getKey(), entry.getValue());
+                }
             }
 
             processor.startOperation(l, new FuelOperation(fuel));
@@ -525,7 +552,8 @@ public abstract class Reactor extends AbstractEnergyProvider
             @Nonnull Location reactor,
             @Nonnull BlockMenu menu,
             @Nullable BlockMenu accessPort,
-            @Nonnull FuelOperation operation) {
+            @Nonnull FuelOperation operation,
+            int batch) {
         boolean requiresCoolant = operation.getProgress() % COOLANT_DURATION == 0;
 
         if (requiresCoolant) {
@@ -538,6 +566,37 @@ public abstract class Reactor extends AbstractEnergyProvider
                         accessPort.replaceExistingItem(slot, remainingItem);
                     }
                 }
+            }
+
+            if (batch > 1) {
+                // Every combined reactor needs its own coolant cell
+                int available = 0;
+
+                for (int slot : getCoolantSlots()) {
+                    ItemStack item = menu.getItemInSlot(slot);
+
+                    if (SlimefunUtils.isItemSimilar(item, coolant, true, false)) {
+                        available += item.getAmount();
+                    }
+                }
+
+                if (available < batch) {
+                    return false;
+                }
+
+                int remaining = batch;
+
+                for (int slot : getCoolantSlots()) {
+                    ItemStack item = menu.getItemInSlot(slot);
+
+                    if (remaining > 0 && SlimefunUtils.isItemSimilar(item, coolant, true, false)) {
+                        int amount = Math.min(remaining, item.getAmount());
+                        menu.consumeItem(slot, amount);
+                        remaining -= amount;
+                    }
+                }
+
+                return true;
             }
 
             for (int slot : getCoolantSlots()) {

@@ -1,0 +1,96 @@
+# Compressed Machine & Electric
+# A compressed machine combines multiple machines into one (x8, x16, x32 or x64).
+#
+# How they work:
+#   Machines    - process up to N recipes at once with the inputs that are available,
+#                 at the same speed as the original. Energy is only used for what is processed.
+#   Generators  - burn up to N fuel units at once and produce the energy of all of them.
+#   Solar       - produce N times the energy.
+#   Reactors    - burn up to N fuel units at once: N times the energy, coolant and byproducts.
+#   Capacitors  - hold N times the energy.
+#
+# Recipes (Compressor):
+#   x8  = 8 of the original
+#   x16 = 2 of the x8 version
+#   x32 = 2 of the x16 version
+#   x64 = 2 of the x32 version
+#
+# Changes require a server restart.
+# Missing options are added automatically, existing values are kept.
+
+# Enable/disable all the compressed machines
+enabled: true
+
+# Enable/disable each multiplier.
+# Disabling a multiplier also disables all the multipliers above it,
+# because their recipes need the previous multiplier.
+multipliers:
+  x8: true
+  x16: true
+  x32: true
+  x64: true
+
+# Enable/disable the compressed versions (all multipliers) of each item, by the ID of the original item
+machines:
+  ELECTRIC_ORE_GRINDER: true
+  ELECTRIC_ORE_GRINDER_2: true
+  ELECTRIC_ORE_GRINDER_3: true
+  ELECTRIC_PRESS: true
+  ELECTRIC_PRESS_2: true
+  ELECTRIC_GOLD_PAN: true
+  ELECTRIC_GOLD_PAN_2: true
+  ELECTRIC_GOLD_PAN_3: true
+  ELECTRIC_DUST_WASHER: true
+  ELECTRIC_DUST_WASHER_2: true
+  ELECTRIC_DUST_WASHER_3: true
+  ELECTRIC_INGOT_FACTORY: true
+  ELECTRIC_INGOT_FACTORY_2: true
+  ELECTRIC_INGOT_FACTORY_3: true
+  ELECTRIC_INGOT_PULVERIZER: true
+  ELECTRIC_FURNACE: true
+  ELECTRIC_FURNACE_2: true
+  ELECTRIC_FURNACE_3: true
+  ELECTRIC_SMELTERY: true
+  ELECTRIC_SMELTERY_2: true
+  CARBON_PRESS: true
+  CARBON_PRESS_2: true
+  CARBON_PRESS_3: true
+  HEATED_PRESSURE_CHAMBER: true
+  HEATED_PRESSURE_CHAMBER_2: true
+  ELECTRIFIED_CRUCIBLE: true
+  ELECTRIFIED_CRUCIBLE_2: true
+  ELECTRIFIED_CRUCIBLE_3: true
+  REFINERY: true
+  FREEZER: true
+  FREEZER_2: true
+  FREEZER_3: true
+  AUTO_DRIER: true
+  FOOD_FABRICATOR: true
+  FOOD_FABRICATOR_2: true
+  FOOD_COMPOSTER: true
+  FOOD_COMPOSTER_2: true
+
+capacitors:
+  SMALL_CAPACITOR: true
+  MEDIUM_CAPACITOR: true
+  BIG_CAPACITOR: true
+  LARGE_CAPACITOR: true
+  CARBONADO_EDGED_CAPACITOR: true
+  ENERGIZED_CAPACITOR: true
+
+generators:
+  BIO_REACTOR: true
+  SOLAR_GENERATOR: true
+  SOLAR_GENERATOR_2: true
+  SOLAR_GENERATOR_3: true
+  SOLAR_GENERATOR_4: true
+  COAL_GENERATOR: true
+  COAL_GENERATOR_2: true
+  LAVA_GENERATOR: true
+  LAVA_GENERATOR_2: true
+  MAGNESIUM_GENERATOR: true
+  COMBUSTION_REACTOR: true
+
+reactors:
+  NUCLEAR_REACTOR: true
+  NETHERSTAR_REACTOR: true

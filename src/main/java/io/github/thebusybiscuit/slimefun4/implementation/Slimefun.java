@@ -39,6 +39,7 @@ import io.github.thebusybiscuit.slimefun4.core.services.github.GitHubService;
 import io.github.thebusybiscuit.slimefun4.core.services.holograms.HologramsService;
 import io.github.thebusybiscuit.slimefun4.core.services.profiler.SlimefunProfiler;
 import io.github.thebusybiscuit.slimefun4.core.services.sounds.SoundService;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.CompressedMachineSetup;
 import io.github.thebusybiscuit.slimefun4.implementation.items.altar.AncientAltar;
 import io.github.thebusybiscuit.slimefun4.implementation.items.altar.AncientPedestal;
 import io.github.thebusybiscuit.slimefun4.implementation.items.backpacks.Cooler;
@@ -775,6 +776,12 @@ public final class Slimefun extends JavaPlugin implements SlimefunAddon, ICompat
                             Level.SEVERE,
                             x,
                             () -> "An Error occurred while initializing SlimefunItems for Slimefun " + getVersion());
+        }
+
+        try {
+            CompressedMachineSetup.setup(this);
+        } catch (Exception | LinkageError x) {
+            getLogger().log(Level.SEVERE, x, () -> "An Error occurred while registering the compressed machines");
         }
     }
 

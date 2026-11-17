@@ -14,6 +14,7 @@ import io.github.thebusybiscuit.slimefun4.core.handlers.BlockBreakHandler;
 import io.github.thebusybiscuit.slimefun4.core.machines.MachineProcessor;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
 import io.github.thebusybiscuit.slimefun4.implementation.SlimefunItems;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.CompressedOutputs;
 import io.github.thebusybiscuit.slimefun4.implementation.handlers.SimpleBlockBreakHandler;
 import io.github.thebusybiscuit.slimefun4.implementation.items.electric.AbstractEnergyProvider;
 import io.github.thebusybiscuit.slimefun4.implementation.operations.FuelOperation;
@@ -155,27 +156,37 @@ public abstract class AGenerator extends AbstractEnergyProvider implements Machi
         FuelOperation operation = processor.getOperation(l);
 
         if (operation != null) {
+            int batch = getCompressedBatch(data);
+            int production = getEnergyProduction() * batch;
+
             if (!operation.isFinished()) {
                 processor.updateProgressBar(inv, 22, operation);
 
                 if (isChargeable()) {
                     long charge = getChargeLong(l, data);
 
-                    if (getCapacityLong() - charge >= getEnergyProduction()) {
+                    if (getCapacityLong() - charge >= production) {
                         operation.addProgress(1);
-                        return getEnergyProduction();
+                        return production;
                     }
 
                     return 0;
                 } else {
                     operation.addProgress(1);
-                    return getEnergyProduction();
+                    return production;
                 }
             } else {
                 ItemStack fuel = operation.getIngredient();
 
                 if (isBucket(fuel)) {
-                    inv.pushItem(new ItemStack(Material.BUCKET), getOutputSlots());
+                    if (batch > 1) {
+                        CompressedOutputs.push(
+                                inv,
+                                getOutputSlots(),
+                                CompressedOutputs.multiply(new ItemStack[] {new ItemStack(Material.BUCKET)}, batch));
+                    } else {
+                        inv.pushItem(new ItemStack(Material.BUCKET), getOutputSlots());
+                    }
                 }
 
                 inv.replaceExistingItem(22, new CustomItemStack(Material.BLACK_STAINED_GLASS_PANE, " "));
@@ -188,8 +199,25 @@ public abstract class AGenerator extends AbstractEnergyProvider implements Machi
             MachineFuel fuel = findRecipe(inv, found);
 
             if (fuel != null) {
-                for (Map.Entry<Integer, Integer> entry : found.entrySet()) {
-                    inv.consumeItem(entry.getKey(), entry.getValue());
+                if (getCompressedMultiplier() > 1) {
+                    int batch = Math.min(getCompressedMultiplier(), countFuelUnits(inv, getInputSlots(), fuel));
+
+                    // Buckets are returned when the fuel is burnt, make sure that they fit
+                    if (isBucket(fuel.getInput())) {
+                        batch = CompressedOutputs.maxFitting(
+                                inv, getOutputSlots(), new ItemStack[] {new ItemStack(Material.BUCKET)}, batch);
+                    }
+
+                    if (batch <= 0) {
+                        return 0;
+                    }
+
+                    consumeFuelUnits(inv, getInputSlots(), fuel, batch);
+                    setCompressedBatch(data, batch);
+                } else {
+                    for (Map.Entry<Integer, Integer> entry : found.entrySet()) {
+                        inv.consumeItem(entry.getKey(), entry.getValue());
+                    }
                 }
 
                 processor.startOperation(l, new FuelOperation(fuel));

@@ -23,6 +23,7 @@ import io.github.thebusybiscuit.slimefun4.core.multiblocks.MultiBlock;
 import io.github.thebusybiscuit.slimefun4.core.multiblocks.MultiBlockMachine;
 import io.github.thebusybiscuit.slimefun4.core.services.sounds.SoundEffect;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.CompressedMachineSetup;
 import io.github.thebusybiscuit.slimefun4.implementation.tasks.AsyncRecipeChoiceTask;
 import io.github.thebusybiscuit.slimefun4.utils.ChatUtils;
 import io.github.thebusybiscuit.slimefun4.utils.ChestMenuUtils;
@@ -604,6 +605,19 @@ public class SurvivalSlimefunGuide implements SlimefunGuideImplementation {
         ItemStack[] recipe = item.getRecipe();
 
         displayItem(menu, profile, p, item, result, recipeType, recipe, task);
+
+        int multiplier = CompressedMachineSetup.getMultiplier(item);
+
+        if (multiplier > 0) {
+            menu.addItem(
+                    25,
+                    new CustomItemStack(
+                            Material.NETHER_STAR,
+                            "&bMultiplier: &ex" + multiplier,
+                            "",
+                            "&7Combines " + multiplier + " machines into one."),
+                    ChestMenuUtils.getEmptyClickHandler());
+        }
 
         if (item instanceof RecipeDisplayItem recipeDisplayItem) {
             displayRecipes(p, profile, menu, recipeDisplayItem, 0);

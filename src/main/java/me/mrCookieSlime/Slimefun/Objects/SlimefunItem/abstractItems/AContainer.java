@@ -17,7 +17,9 @@ import io.github.thebusybiscuit.slimefun4.core.handlers.BlockBreakHandler;
 import io.github.thebusybiscuit.slimefun4.core.machines.MachineProcessor;
 import io.github.thebusybiscuit.slimefun4.core.networks.energy.EnergyNetComponentType;
 import io.github.thebusybiscuit.slimefun4.implementation.Slimefun;
+import io.github.thebusybiscuit.slimefun4.implementation.compressed.CompressedOutputs;
 import io.github.thebusybiscuit.slimefun4.implementation.handlers.SimpleBlockBreakHandler;
+import io.github.thebusybiscuit.slimefun4.implementation.operations.BatchCraftingOperation;
 import io.github.thebusybiscuit.slimefun4.implementation.operations.CraftingOperation;
 import io.github.thebusybiscuit.slimefun4.utils.ChestMenuUtils;
 import io.github.thebusybiscuit.slimefun4.utils.itemstack.ItemStackWrapper;
@@ -26,6 +28,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
 import me.mrCookieSlime.CSCoreLibPlugin.general.Inventory.ChestMenu.AdvancedMenuClickHandler;
 import me.mrCookieSlime.CSCoreLibPlugin.general.Inventory.ClickAction;
@@ -71,6 +74,16 @@ public abstract class AContainer extends SlimefunItem
     private int energyConsumedPerTick = -1;
     private int energyCapacity = -1;
     private int processingSpeed = -1;
+
+    /**
+     * The amount of machines combined into this machine (compressed machines), 1 for a normal machine.
+     */
+    private int compressedMultiplier = 1;
+
+    /**
+     * The original machine of a compressed machine, its recipes are shared.
+     */
+    private AContainer compressedBase;
 
     @ParametersAreNonnullByDefault
     protected AContainer(ItemGroup itemGroup, SlimefunItemStack item, RecipeType recipeType, ItemStack[] recipe) {
@@ -306,10 +319,55 @@ public abstract class AContainer extends SlimefunItem
     }
 
     public List<MachineRecipe> getMachineRecipes() {
-        return recipes;
+        return compressedBase != null ? compressedBase.getMachineRecipes() : recipes;
+    }
+
+    /**
+     * This turns this machine into a compressed machine: the given amount of the given machine combined into one.
+     * A compressed machine shares the recipes of the original machine and processes up to
+     * {@code multiplier} recipes at once.
+     * This method <strong>must</strong> be called before registering the item.
+     *
+     * @param base
+     *            The original machine
+     * @param multiplier
+     *            The amount of machines combined into this machine
+     *
+     * @return This method will return the current instance of {@link AContainer}, so that can be chained.
+     */
+    public final AContainer setCompressed(@Nonnull AContainer base, int multiplier) {
+        Validate.notNull(base, "The original machine cannot be null!");
+        Validate.isTrue(multiplier > 0, "The multiplier must be greater than zero!");
+
+        if (getState() != ItemState.UNREGISTERED) {
+            throw new IllegalStateException("You cannot make a machine compressed after the Item was registered.");
+        }
+
+        this.compressedBase = base;
+        this.compressedMultiplier = multiplier;
+        return this;
+    }
+
+    /**
+     * This returns how many machines are combined into this machine.
+     *
+     * @return The multiplier of this compressed machine, 1 for a normal machine
+     */
+    public int getCompressedMultiplier() {
+        return compressedMultiplier;
+    }
+
+    /**
+     * This returns the original machine of this compressed machine.
+     *
+     * @return The original machine, or null if this is not a compressed machine
+     */
+    @Nullable public AContainer getCompressedBase() {
+        return compressedBase;
     }
 
     public List<ItemStack> getDisplayRecipes() {
+        List<MachineRecipe> recipes = getMachineRecipes();
         List<ItemStack> displayRecipes = new ArrayList<>(recipes.size() * 2);
 
         for (MachineRecipe recipe : recipes) {
@@ -373,7 +431,11 @@ public abstract class AContainer extends SlimefunItem
         CraftingOperation currentOperation = processor.getOperation(b);
 
         if (currentOperation != null) {
-            if (takeCharge(b.getLocation())) {
+            boolean charged = currentOperation instanceof BatchCraftingOperation batchOperation
+                    ? takeCharge(b.getLocation(), (long) getEnergyConsumption() * batchOperation.getBatch())
+                    : takeCharge(b.getLocation());
+
+            if (charged) {
 
                 if (!currentOperation.isFinished()) {
                     processor.updateProgressBar(inv, 22, currentOperation);
@@ -382,13 +444,26 @@ public abstract class AContainer extends SlimefunItem
                     inv.replaceExistingItem(22, new CustomItemStack(Material.BLACK_STAINED_GLASS_PANE, " "));
 
                     for (ItemStack output : currentOperation.getResults()) {
-                        inv.pushItem(output.clone(), getOutputSlots());
+                        if (output != null && !output.getType().isAir()) {
+                            inv.pushItem(output.clone(), getOutputSlots());
+                        }
                     }
 
                     processor.endOperation(b);
                 }
             }
         } else {
+            if (compressedMultiplier > 1) {
+                currentOperation = findNextBatch(inv, compressedMultiplier);
+
+                if (currentOperation != null) {
+                    processor.startOperation(b, currentOperation);
+                    processor.updateProgressBar(inv, 22, currentOperation);
+                }
+
+                return;
+            }
+
             MachineRecipe next = findNextRecipe(inv);
 
             if (next != null) {
@@ -409,16 +484,29 @@ public abstract class AContainer extends SlimefunItem
      * @return Whether charge was taken if its chargeable
      */
     protected boolean takeCharge(@Nonnull Location l) {
+        return takeCharge(l, getEnergyConsumption());
+    }
+
+    /**
+     * This method will remove the given amount of charge from a location if it is chargeable.
+     *
+     * @param l
+     *            location to try to remove charge from
+     * @param amount
+     *            the amount of charge to remove
+     * @return Whether charge was taken if its chargeable
+     */
+    protected boolean takeCharge(@Nonnull Location l, long amount) {
         Validate.notNull(l, "Can't attempt to take charge from a null location!");
 
         if (isChargeable()) {
             long charge = getChargeLong(l);
 
-            if (charge < getEnergyConsumption()) {
+            if (charge < amount) {
                 return false;
             }
 
-            setCharge(l, (long) charge - getEnergyConsumption());
+            setCharge(l, charge - amount);
             return true;
         } else {
             return true;
@@ -438,7 +526,7 @@ public abstract class AContainer extends SlimefunItem
 
         Map<Integer, Integer> found = new HashMap<>();
 
-        for (MachineRecipe recipe : recipes) {
+        for (MachineRecipe recipe : getMachineRecipes()) {
             for (ItemStack input : recipe.getInput()) {
                 for (int slot : getInputSlots()) {
                     if (Slimefun.getItemStackService()
@@ -467,6 +555,114 @@ public abstract class AContainer extends SlimefunItem
             } else {
                 found.clear();
             }
+        }
+
+        return null;
+    }
+
+    /**
+     * This method finds the next recipe of a compressed machine and processes as many
+     * recipes as possible at once (up to the given maximum).
+     * The amount is limited by the available inputs (from any input slot) and the free space in the output slots,
+     * the inputs are consumed immediately.
+     *
+     * @param inv
+     *            The {@link BlockMenu} of the machine
+     * @param max
+     *            The max amount of recipes to process at once
+     *
+     * @return The {@link CraftingOperation} for all the processed recipes, or null if nothing can be processed
+     */
+    @Nullable protected CraftingOperation findNextBatch(@Nonnull BlockMenu inv, int max) {
+        int[] inputSlots = getInputSlots();
+        ItemStack[] contents = new ItemStack[inputSlots.length];
+
+        for (int i = 0; i < inputSlots.length; i++) {
+            ItemStack item = inv.getItemInSlot(inputSlots[i]);
+
+            if (item != null && !item.getType().isAir()) {
+                contents[i] = ItemStackWrapper.wrap(item);
+            }
+        }
+
+        for (MachineRecipe recipe : getMachineRecipes()) {
+            ItemStack[] inputs = recipe.getInput();
+            // The slots that match each input, and how many recipes these slots can supply
+            List<List<Integer>> matches = new ArrayList<>(inputs.length);
+            boolean[] used = new boolean[contents.length];
+            boolean overlapping = false;
+            int batch = max;
+
+            for (ItemStack input : inputs) {
+                List<Integer> slots = new ArrayList<>();
+                long available = 0;
+
+                for (int i = 0; i < contents.length; i++) {
+                    if (contents[i] != null
+                            && Slimefun.getItemStackService()
+                                    .isSimilar(contents[i], input, MatchContext.RECIPE_INPUT, true, false)) {
+                        slots.add(i);
+                        available += contents[i].getAmount();
+                    }
+                }
+
+                // The amount is counted by the matching slots, a slot must hold at least one full input
+                if (slots.isEmpty() || available < input.getAmount()) {
+                    batch = 0;
+                    break;
+                }
+
+                for (int index : slots) {
+                    overlapping |= used[index];
+                    used[index] = true;
+                }
+
+                batch = (int) Math.min(batch, available / input.getAmount());
+                matches.add(slots);
+            }
+
+            if (batch <= 0) {
+                continue;
+            }
+
+            if (overlapping) {
+                // Multiple inputs match the same slot, process a single recipe the normal way
+                MachineRecipe single = findNextRecipe(inv);
+                return single == null ? null : new CraftingOperation(single);
+            }
+
+            batch = CompressedOutputs.maxFitting(inv, getOutputSlots(), recipe.getOutput(), batch);
+
+            if (batch <= 0) {
+                // The recipe was found, but there is no space for its output
+                return null;
+            }
+
+            // Consume the inputs of all the recipes
+            for (int i = 0; i < inputs.length; i++) {
+                int remaining = inputs[i].getAmount() * batch;
+
+                for (int index : matches.get(i)) {
+                    if (remaining <= 0) {
+                        break;
+                    }
+
+                    ItemStack item = inv.getItemInSlot(inputSlots[index]);
+
+                    if (item == null) {
+                        continue;
+                    }
+
+                    int amount = Math.min(remaining, item.getAmount());
+                    inv.consumeItem(inputSlots[index], amount);
+                    remaining -= amount;
+                }
+            }
+
+            List<ItemStack> results = CompressedOutputs.multiply(recipe.getOutput(), batch);
+            List<ItemStack> ingredients = CompressedOutputs.multiply(inputs, batch);
+            return new BatchCraftingOperation(
+                    ingredients.toArray(new ItemStack[0]), results.toArray(new ItemStack[0]), recipe.getTicks(), batch);
         }
 
         return null;
